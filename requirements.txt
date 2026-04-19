@@ -1,0 +1,9 @@
+streamlit
+pandas
+Pillow
+easyocr
+opencv-python-headless
+numpy
+PyPDF2
+torch
+torchvision

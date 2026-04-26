@@ -1,39 +1,97 @@
 import easyocr
 import re
-from PIL import Image
+import cv2
 import numpy as np
 
-reader = easyocr.Reader(['en'], gpu=False)
+# Load EasyOCR model once
+reader = easyocr.Reader(['en'])
 
+
+# ---------------- IMAGE PREPROCESSING ----------------
 def preprocess_image(image_file):
-    image_file.seek(0)
-    image = Image.open(image_file).convert("RGB")
-    return np.array(image)
+    file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, 1)
 
-def clean_text(text):
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip().lower()
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
+    # Increase contrast
+    gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
+
+    return gray
+
+
+# ---------------- OCR ----------------
 def extract_text_and_amount(image_file):
-    img = preprocess_image(image_file)
+    try:
+        image_file.seek(0)
+        processed = preprocess_image(image_file)
 
-    results = reader.readtext(img, detail=0)
+        results = reader.readtext(processed)
 
-    text = " ".join(results)
-    text = clean_text(text)
+        text = " ".join([res[1] for res in results])
 
-    nums = re.findall(r'\d+\.\d+|\d+', text)
+        print("OCR TEXT:", text)  # debug
 
-    values = []
+        return text, 0  # ❌ we DON'T trust raw amount anymore
 
-    for n in nums:
-        try:
-            v = float(n)
-            if 10 <= v <= 100000:
-                values.append(v)
-        except:
-            pass
+    except Exception as e:
+        print("OCR Error:", e)
+        return "", 0
 
-    amount = max(values) if values else 0
 
-    return text, amount
+# ---------------- SMART EXTRACTION ----------------
+def extract_details(text):
+
+    text_upper = text.upper()
+
+    # -------- Currency --------
+    currency = "₹"
+    if "$" in text:
+        currency = "$"
+    elif "€" in text:
+        currency = "€"
+
+    # -------- Merchant --------
+    merchant = "Unknown"
+    lines = text.split()
+
+    for word in lines:
+        if len(word) > 3 and not word.isdigit():
+            merchant = word
+            break
+
+    # -------- Amount Detection (SMART) --------
+
+    # Priority 1 → TOTAL / AMOUNT keywords
+    patterns = [
+        r"TOTAL\s*[:\-]?\s*(\d+\.?\d*)",
+        r"AMOUNT\s*[:\-]?\s*(\d+\.?\d*)",
+        r"GRAND\s*TOTAL\s*[:\-]?\s*(\d+\.?\d*)",
+        r"TOTAL\s*₹?\s*(\d+\.?\d*)"
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text_upper)
+        if match:
+            return merchant, float(match.group(1)), currency
+
+    # Priority 2 → ₹ or currency values
+    currency_matches = re.findall(r"[₹$€]\s?(\d+\d*)", text)
+    if currency_matches:
+        return merchant, float(max(currency_matches, key=float)), currency
+
+    # Priority 3 → Filtered numbers
+    numbers = re.findall(r"\d+\.?\d*", text)
+
+    filtered = []
+    for num in numbers:
+        val = float(num)
+
+        # Ignore unrealistic values
+        if 1 < val < 100000:
+            filtered.append(val)
+
+    if filtered:
+        return merchant, max(filtered), currency
+
+    return merchant, 0, currency

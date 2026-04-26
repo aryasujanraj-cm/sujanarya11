@@ -1,19 +1,8 @@
 import json
 import os
+from datetime import datetime
 
 FILE = "expenses.json"
-
-def save_expense(amount, category):
-    expense = {
-        "amount": float(amount),
-        "category": category
-    }
-
-    data = load_expenses()
-    data.append(expense)
-
-    with open(FILE, "w") as f:
-        json.dump(data, f)
 
 def load_expenses():
     if not os.path.exists(FILE):
@@ -24,3 +13,18 @@ def load_expenses():
             return json.load(f)
     except:
         return []
+
+def save_expense(amount, category, merchant="Unknown"):
+    data = load_expenses()
+
+    expense = {
+        "amount": float(amount),
+        "category": category,
+        "merchant": merchant,
+        "date": datetime.now().strftime("%Y-%m-%d")
+    }
+
+    data.append(expense)
+
+    with open(FILE, "w") as f:
+        json.dump(data, f, indent=4)

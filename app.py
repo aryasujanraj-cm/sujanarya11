@@ -1,5 +1,5 @@
 # =========================
-# app.py
+# app.py (FINAL VERSION)
 # =========================
 
 import streamlit as st
@@ -8,9 +8,14 @@ import pandas as pd
 import PyPDF2
 
 from categorize import categorize
-from extract import extract_text_and_amount
+from extract import extract_text_and_amount, extract_details
 from storage import save_expense, load_expenses
 
+from analysis import analyze, top_category, spending_insights, monthly_trend, budget_analysis
+from prediction import predict_monthly_spending, category_prediction
+
+
+# ---------------- CONFIG ----------------
 st.set_page_config(
     page_title="Financial Advisor AI",
     page_icon="💰",
@@ -19,6 +24,8 @@ st.set_page_config(
 
 st.title("💰 Financial Advisor & Expense Manager AI")
 
+
+# ---------------- MENU ----------------
 menu = st.sidebar.radio(
     "Select Feature",
     [
@@ -33,10 +40,12 @@ menu = st.sidebar.radio(
     ]
 )
 
+
 # ---------------- HOME ----------------
 if menu == "Home":
     st.subheader("Welcome")
-    st.write("Use sidebar to access all features.")
+    st.write("Use sidebar to navigate through features.")
+
 
 # ---------------- OCR ----------------
 elif menu == "Upload Screenshot":
@@ -50,31 +59,40 @@ elif menu == "Upload Screenshot":
 
     if uploaded_file is not None:
 
-        img = Image.open(uploaded_file)
-        st.image(img, caption="Uploaded Image", use_column_width=True)
+        # Show image
+        st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
 
-        # IMPORTANT FIX
-        uploaded_file.seek(0)
+        # Extract text using EasyOCR
+        text, _ = extract_text_and_amount(uploaded_file)
 
-        text, amount = extract_text_and_amount(uploaded_file)
+        # Smart extraction
+        merchant, amount, currency = extract_details(text)
 
-        st.subheader("Extracted Text")
-        st.write(text)
+        # Debug OCR output
+        st.subheader("🔍 RAW OCR TEXT")
+        st.text_area("OCR Output", text, height=200)
 
-        st.subheader("Detected Amount")
-        st.write(amount)
+        # Display extracted values
+        st.subheader("🏪 Merchant")
+        st.write(merchant)
 
+        st.subheader("💰 Amount")
+        st.write(f"{currency} {amount}")
+
+        # Category detection
         category = categorize(text)
 
-        st.subheader("Category")
+        st.subheader("📂 Category")
         st.write(category)
 
+        # Save
         if amount > 0:
             if st.button("Save Expense"):
-                save_expense(amount, category)
+                save_expense(amount, category, merchant)
                 st.success("Expense Saved")
         else:
-            st.warning("Amount not detected")
+            st.warning("Amount not detected properly")
+
 
 # ---------------- MANUAL ----------------
 elif menu == "Manual Entry":
@@ -90,6 +108,7 @@ elif menu == "Manual Entry":
             st.success("Expense Added")
         else:
             st.warning("Enter valid data")
+
 
 # ---------------- CSV ----------------
 elif menu == "CSV Upload":
@@ -112,44 +131,45 @@ elif menu == "CSV Upload":
         else:
             st.error("CSV must contain amount and category columns")
 
+
 # ---------------- ANALYSIS ----------------
 elif menu == "Analysis":
 
-    st.subheader("📊 Spending Analysis")
+    st.subheader("📊 Advanced Analysis")
 
     expenses = load_expenses()
 
     if not expenses:
         st.warning("No expenses found")
     else:
-        df = pd.DataFrame(expenses)
-
-        total = df["amount"].sum()
+        total, cat_data, monthly_data = analyze(expenses)
 
         st.metric("Total Spending", f"₹ {total:.2f}")
 
-        st.subheader("All Expenses")
-        st.dataframe(df, use_container_width=True)
-
-        category_total = df.groupby("category")["amount"].sum()
-
         st.subheader("Category Breakdown")
-        st.bar_chart(category_total)
+        st.bar_chart(cat_data)
 
-        st.subheader("💡 Advice")
+        st.subheader("Top Category")
+        st.write(top_category(cat_data))
 
-        if total > 20000:
-            st.warning("Spending is high this month.")
+        st.subheader("📈 Trend")
+        st.write(monthly_trend(monthly_data))
 
-        if "Food" in category_total.index:
-            if category_total["Food"] > 5000:
-                st.info("Food expenses are high.")
+        st.subheader("💡 Insights")
+        for i in spending_insights(total, cat_data):
+            st.info(i)
 
-        if "Shopping" in category_total.index:
-            if category_total["Shopping"] > 3000:
-                st.info("Shopping expenses increasing.")
+        st.subheader("💰 Budget Health")
+        for i in budget_analysis(total, cat_data):
+            st.warning(i)
 
-        st.success("Try saving 20% monthly.")
+        st.subheader("🤖 Prediction")
+        pred = predict_monthly_spending()
+        st.write(f"Next Month Estimate: ₹{pred}")
+
+        st.write("Category Prediction:")
+        st.write(category_prediction())
+
 
 # ---------------- BUDGET ----------------
 elif menu == "Budget Tracker":
@@ -179,6 +199,7 @@ elif menu == "Budget Tracker":
         elif spent > budget * 0.8:
             st.warning("80% Budget Used")
 
+
 # ---------------- GURU AI ----------------
 elif menu == "Guru AI":
 
@@ -194,7 +215,6 @@ elif menu == "Guru AI":
 
         for page in reader.pages:
             page_text = page.extract_text()
-
             if page_text:
                 text += page_text + "\n"
 
@@ -205,6 +225,7 @@ elif menu == "Guru AI":
         if q:
             st.write("Suggested Insight:")
             st.write("Focus on saving, budgeting, debt control and investments.")
+
 
 # ---------------- SPLITWISE ----------------
 elif menu == "Splitwise":
